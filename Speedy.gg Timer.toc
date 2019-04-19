@@ -1,0 +1,10 @@
+## Interface: 81000
+## Title: Speedy.gg Timer
+## Notes: Speedy.gg Timer
+## Author: Ironi
+## Version: 1.0
+## DefaultState: enabled
+
+## SavedVariablesPerCharacter: speedyggDB
+
+speedygg.lua
