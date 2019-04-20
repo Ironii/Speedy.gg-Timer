@@ -1,5 +1,5 @@
 local addonName, namespace = ...
-local speedy = {}
+local speedy = namespace
 speedy.playerClass = select(3, UnitClass('player'))
 speedy.name = UnitName('player')
 speedy.server = GetRealmName()
@@ -38,6 +38,9 @@ end
 function speedy:HideTimer()
 	if speedy.frames and speedy.frames.mainFrame then
 		speedy.frames.mainFrame:Hide()
+	end
+	if speedy.onUpdateFrame then
+		speedy.onUpdateFrame:SetScript("OnUpdate", nil)
 	end
 end
 function speedy:ExportData()
@@ -111,11 +114,58 @@ function speedy:GetFormatedDungeonInfo()
 	end
 	return #t > 0 and table.concat(t) or ""
 end
+function speedy:UpdateFontSizes()
+	if not speedy.frames then return end
+
+	speedy.frames.mainTimerText:SetFont(GameFontNormal:GetFont(), speedyggDB.fontSize, "OUTLINE")
+	speedy.frames.dungeonInfo:SetFont(GameFontNormal:GetFont(), speedyggDB.objectiveFontSize, "OUTLINE")
+	speedy.frames.watermarkText:SetFont(GameFontNormal:GetFont(), speedyggDB.objectiveFontSize+4, "OUTLINE")
+
+	local w, h = speedy.frames.dungeonInfo:GetSize()
+	speedy.frames.dungeonInfoBG:SetSize(w, h+2)
+	speedy.frames.mainFrame:SetWidth(speedy.frames.mainTimerText:GetWidth())
+	speedy.frames.mainFrame:SetHeight(speedy.frames.mainTimerText:GetHeight())
+end
 function speedy:UpdateEncounterInfo()
 	if not speedy.frames or not speedy.frames.dungeonInfo then return end
 	speedy.frames.dungeonInfo:SetText(speedy:GetFormatedDungeonInfo(speedyggDB.currentInstance.encounters))
-	local w, s = speedy.frames.dungeonInfo:GetSize()
-	speedy.frames.dungeonInfoBG:SetSize(w+2, s+2)
+	local w, h = speedy.frames.dungeonInfo:GetSize()
+	speedy.frames.dungeonInfoBG:SetSize(w, h+2)
+end
+local function toggleFrameLock()
+	if not (speedy.frames and speedy.frames.mainFrame) then return end
+	if speedyggDB.lock then
+		speedy.frames.mainFrame:EnableMouse(false)
+		speedy.frames.mainFrame:SetMovable(false)
+		speedy.frames.mainFrame:SetScript('OnMouseDown', nil)
+		speedy.frames.mainFrame:SetScript('OnMouseUp', nil)
+		return
+	end
+	speedy.frames.mainFrame:EnableMouse(true)
+	speedy.frames.mainFrame:SetMovable(true)
+	speedy.frames.mainFrame:SetScript('OnMouseDown', function(self,button)
+		speedy.frames.mainFrame:ClearAllPoints()
+		speedy.frames.mainFrame:StartMoving()
+	end)
+	speedy.frames.mainFrame:SetScript('OnMouseUp', function(self, button)
+		speedy.frames.mainFrame:StopMovingOrSizing()
+		local _a, _, _, _x, _y = speedy.frames.mainFrame:GetPoint()
+		speedyggDB.pos = {
+			x = _x,
+			y = _y,
+			anchor = _a,
+		}
+		if _a:find("LEFT") then
+			speedyggDB.pos.j = "LEFT"
+			speedy.frames.mainTimerText:SetJustifyH("LEFT")
+		elseif _a:find("RIGHT") then
+			speedyggDB.pos.j = "RIGHT"
+			speedy.frames.mainTimerText:SetJustifyH("RIGHT")
+			else
+				speedyggDB.pos.j = "CENTER"
+				speedy.frames.mainTimerText:SetJustifyH("CENTER")
+		end
+	end)
 end
 function speedy:ShowTimer(completed)
 	if not speedy.frames then
@@ -138,7 +188,7 @@ function speedy:ShowTimer(completed)
 			speedy.frames.dungeonInfoBG:SetPoint("TOP"..speedyggDB.pos.j, speedy.frames.mainFrame, "BOTTOM"..speedyggDB.pos.j, 0, 0)
 		end
 		speedy.frames.dungeonInfo = speedy.frames.mainFrame:CreateFontString()
-		speedy.frames.dungeonInfo:SetFont(GameFontNormal:GetFont(), speedyggDB.fontSize-6, "OUTLINE")
+		speedy.frames.dungeonInfo:SetFont(GameFontNormal:GetFont(), speedyggDB.objectiveFontSize, "OUTLINE")
 		speedy.frames.dungeonInfo:SetPoint("CENTER", speedy.frames.dungeonInfoBG, "CENTER", 2, -2)
 		--speedy.frames.dungeonInfo:SetPoint("TOP"..speedyggDB.pos.j, speedy.frames.mainFrame, "BOTTOM"..speedyggDB.pos.j, 0, 0)
 		speedy.frames.dungeonInfo:SetJustifyH(speedyggDB.pos.j)
@@ -149,7 +199,7 @@ function speedy:ShowTimer(completed)
 		speedy.frames.watermark:SetFrameStrata("DIALOG")
 
 		speedy.frames.watermarkText = speedy.frames.watermark:CreateFontString()
-		speedy.frames.watermarkText:SetFont(GameFontNormal:GetFont(), speedyggDB.fontSize+4, "OUTLINE")
+		speedy.frames.watermarkText:SetFont(GameFontNormal:GetFont(), speedyggDB.objectiveFontSize+4, "OUTLINE")
 		speedy.frames.watermarkText:SetTextColor(1,1,0)
 		speedy.frames.watermarkText:SetPoint("CENTER", speedy.frames.watermark, "CENTER", 0, 0)
 		speedy.frames.watermarkText:SetJustifyH("CENTER")
@@ -174,6 +224,8 @@ function speedy:ShowTimer(completed)
 		speedy:UpdateEncounterInfo()
 
 		speedy.frames.mainFrame:SetWidth(speedy.frames.mainTimerText:GetWidth())
+		speedy.frames.mainFrame:SetHeight(speedy.frames.mainTimerText:GetHeight())
+
 
 
 		speedy.frames.startButton = CreateFrame("Button", nil, speedy.frames.mainFrame, "UIPanelButtonTemplate")
@@ -196,31 +248,7 @@ function speedy:ShowTimer(completed)
 		end)
 		speedy.frames.exportButton:Hide()
 
-		speedy.frames.mainFrame:EnableMouse()
-		speedy.frames.mainFrame:SetMovable(true)
-		speedy.frames.mainFrame:SetScript('OnMouseDown', function(self,button)
-			speedy.frames.mainFrame:ClearAllPoints()
-			speedy.frames.mainFrame:StartMoving()
-		end)
-		speedy.frames.mainFrame:SetScript('OnMouseUp', function(self, button)
-			speedy.frames.mainFrame:StopMovingOrSizing()
-			local _a, _, _, _x, _y = speedy.frames.mainFrame:GetPoint()
-			speedyggDB.pos = {
-				x = _x,
-				y = _y,
-				anchor = _a,
-			}
-			if _a:find("LEFT") then
-				speedyggDB.pos.j = "LEFT"
-				speedy.frames.mainTimerText:SetJustifyH("LEFT")
-			elseif _a:find("RIGHT") then
-				speedyggDB.pos.j = "RIGHT"
-				speedy.frames.mainTimerText:SetJustifyH("RIGHT")
-				else
-					speedyggDB.pos.j = "CENTER"
-					speedy.frames.mainTimerText:SetJustifyH("CENTER")
-			end
-		end)
+		toggleFrameLock()
 
 		if speedyggDB.currentInstance.alreadyStarted then
 			if not completed then
@@ -243,6 +271,7 @@ function speedy:ShowTimer(completed)
 			speedy.frames.exportButton:Hide()
 		end
 		speedy.frames.mainFrame:Show()
+		speedy:UpdateEncounterInfo()
 	end
 
 end
@@ -306,6 +335,7 @@ function speedy:loadDefaults()
 				encounters = {},
 			},
 			fontSize = 18,
+			objectiveFontSize = 12,
 			pos = {
 				x = 0,
 				y = -50,
@@ -326,6 +356,7 @@ function speedy:loadDefaults()
 			encounters = {},
 		},
 		fontSize = 18,
+		objectiveFontSize = 12,
 		pos = {
 			x = 0,
 			y = -50,
@@ -372,7 +403,6 @@ function addon:SCENARIO_POI_UPDATE()
 		speedy:StopTimer()
 		return
 	end
-		--print("GetInfo",scenarioDone)
 	local instanceName, scenarioDesc, objectiveCount = C_Scenario.GetStepInfo()
 	local isAllCompleted = true
 	for i = 1, objectiveCount do
@@ -382,7 +412,7 @@ function addon:SCENARIO_POI_UPDATE()
 		end
 		if not speedyggDB.currentInstance.encounters[i] then
 			speedyggDB.currentInstance.encounters[i] = {
-				criteria = criteriaString,
+				criteria = criteriaString and criteriaString:gsub(" defeated$", "") or "",
 				completeTime = nil,
 				bestTime = speedy:GetDiff(i, 0, true),
 				dif = false
@@ -410,6 +440,7 @@ function addon:PLAYER_ENTERING_WORLD()
 			encounters = {},
 		}
 		speedy:HideTimer()
+		speedy.isReady = false
 		return
 	end
 	local instanceID = select(8, GetInstanceInfo())
@@ -430,7 +461,7 @@ function addon:PLAYER_ENTERING_WORLD()
 				return
 			end
 			speedyggDB.currentInstance.encounters[i] = {
-					criteria = criteriaString,
+					criteria = criteriaString and criteriaString:gsub(" defeated$", "") or "",
 					completeTime = nil,
 					bestTime = speedy:GetDiff(i, 0, true),
 					dif = false
@@ -457,22 +488,11 @@ SlashCmdList["SPEEDYGG"] = function(msg)
 	if msg and msg:len() > 0 then
 		msg = msg:lower()
 	end
-	if msg == "start" or msg == "s" then
-		if speedy.frames and speedy.frames.startButton and speedy.frames.startButton:IsShown() then
-			speedy.frames.startButton:Hide()
-			StartTimer()
-		end
-	elseif msg:match('^font (%d+)$') or msg:match('^f (%d+)$') then
-		local size = msg:match('^font (%d+)$')
-		if not size then
-			size = msg:match('^f (%d+)$')
-		end
-		size = tonumber(size)
-		speedyggDB.fontSize = size
-		print("Speedy.gg: Timer font size changed to: " .. size .. ".")
-		if speedy.frames and speedy.frames.mainTimerText then
-			speedy.frames.mainTimerText:SetFont(GameFontNormal:GetFont(), speedyggDB.fontSize, "OUTLINE")
-			speedy.frames.mainFrame:SetWidth(speedy.frames.mainTimerText:GetWidth())
-		end
+	if msg == "reset" or msg == "r" then
+		speedyggDB.instanceHistory = nil
+		speedyggDB.instanceHistory = {}
+		speedy:print("History cleaned.")
+	else
+		InterfaceOptionsFrame_OpenToCategory(addonName)
 	end
 end
