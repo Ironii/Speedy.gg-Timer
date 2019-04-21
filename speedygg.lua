@@ -385,6 +385,7 @@ function addon:PLAYER_STARTED_MOVING()
 		else
 			speedy:HideTimer()
 			speedy:print("Timer disabled because you moved. Re-enter to enable again.")
+			addon:UnregisterEvent("SCENARIO_POI_UPDATE")
 		end
 		addon:UnregisterEvent("PLAYER_STARTED_MOVING")
 	end
@@ -431,6 +432,7 @@ end
 function addon:PLAYER_ENTERING_WORLD()
 	if not IsInInstance() then
 		addon:UnregisterEvent("PLAYER_STARTED_MOVING")
+		addon:UnregisterEvent("SCENARIO_POI_UPDATE")
 		speedyggDB.currentInstance = {
 			instanceID = instanceID,
 			alreadyStarted = false,
@@ -467,6 +469,7 @@ function addon:PLAYER_ENTERING_WORLD()
 					dif = false
 			}
 		end
+		addon:RegisterEvent("SCENARIO_POI_UPDATE")
 		addon:RegisterEvent("PLAYER_STARTED_MOVING")
 		speedy:ShowTimer()
 	elseif speedyggDB.currentInstance.alreadyStarted and speedyggDB.currentInstance.startTime < GetTime() then -- reboot check
@@ -478,6 +481,7 @@ function addon:PLAYER_ENTERING_WORLD()
 				_completed = false
 			end
 		end
+		addon:RegisterEvent("SCENARIO_POI_UPDATE")
 		speedy:ShowTimer(_completed)
 	end
 end
