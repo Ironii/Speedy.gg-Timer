@@ -2,10 +2,11 @@
 ## Title: Speedy.gg Timer
 ## Notes: Speedy.gg Timer
 ## Author: Ironi
-## Version: 1.04
+## Version: 1.05
 ## DefaultState: enabled
 
 ## SavedVariablesPerCharacter: speedyggDB
 
 speedygg.lua
 config.lua
+dungeonData.lua
