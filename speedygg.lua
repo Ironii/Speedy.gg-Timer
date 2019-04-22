@@ -5,7 +5,7 @@ speedy.name = UnitName('player')
 speedy.server = GetRealmName()
 speedy.guid = UnitGUID('player')
 speedy.onUpdateFrame = CreateFrame("frame")
-speedy.version = 1.05
+speedy.version = 1.06
 local addon = CreateFrame('Frame');
 addon:SetScript("OnEvent", function(self, event, ...)
 	self[event](self, ...)
@@ -119,6 +119,26 @@ end
 function speedy:GetFormatedDungeonInfo(force)
 	local _abs = math.abs
 	local t = {}
+	if speedy.usingHardcodedData then
+		for i = 1, #speedyggDB.currentInstance.encounters do
+			local v = speedyggDB.currentInstance.encounters[i]
+			local str = (#t > 0 and "\n") or ""
+				-- Criteria
+			if not v.completeTime then
+				t[#t+1] = string.format("%s%s - \124cff00ffff%s\124r",str, v.criteria, (v.bestTime or "N/A"))
+			else
+				local _e = speedy:FormatToColor("GREEN", v.criteria)
+				local _ct = GetFormatedTime(v.completeTime, true)
+				local _dif = ""
+				if v.dif then
+					local isFaster = v.dif < 0
+					_dif = speedy:FormatToColor((isFaster and "GREEN" or "RED"), (isFaster and " -" or " +") .. GetFormatedTime(_abs(v.dif), true))
+				end
+				t[#t+1] = string.format("%s%s - %s%s", str, _e, _ct, _dif)
+			end
+		end
+		return #t > 0 and table.concat(t) or ""
+	end
 	local _,_, objectiveCount = C_Scenario.GetStepInfo()
 	if objectiveCount == 0 then
 		for criteriaID,v in spairs(speedyggDB.currentInstance.encounters, function(t,a,b) return t[b].completeTime > t[a].completeTime end) do
@@ -336,9 +356,13 @@ function speedy:StopTimer()
 	end
 	speedy.onUpdateFrame:SetScript("OnUpdate",nil)
 end
-function speedy:GetDiff(id, currentTime, returnBest)
-	local dID = speedyggDB.currentInstance.difficultyID
-	local iID = speedyggDB.currentInstance.instanceID
+function speedy:GetDiff(id, currentTime, returnBest, dID, iID)
+	if not dID then
+		dID = speedyggDB.currentInstance.difficultyID
+	end
+	if not iID then
+		iID = speedyggDB.currentInstance.instanceID
+	end
 	if not (speedyggDB.instanceHistory[dID] and speedyggDB.instanceHistory[dID][iID] and speedyggDB.instanceHistory[dID][iID][id]) then
 		return returnBest and "N/A" or false
 	end
@@ -364,7 +388,11 @@ function speedy:SaveDungeonToHistory()
 	end
 	speedyggDB.instanceHistory[dID][iID].bestTime = currentTime
 	for k,v in pairs(speedyggDB.currentInstance.encounters) do
-		speedyggDB.instanceHistory[dID][iID][k] = v.completeTime
+		if speedy.usingHardcodedData then
+			speedyggDB.instanceHistory[dID][iID][v.eID] = v.completeTime
+		else
+			speedyggDB.instanceHistory[dID][iID][k] = v.completeTime
+		end
 	end
 	speedy:print("Congratz! New best run.")
 end
@@ -438,6 +466,7 @@ function addon:PLAYER_STARTED_MOVING()
 			speedy:HideTimer()
 			speedy:print("Timer disabled because you moved. Re-enter to enable again.")
 			addon:UnregisterEvent("SCENARIO_POI_UPDATE")
+			addon:UnregisterEvent("ENCOUNTER_END")
 		end
 		addon:UnregisterEvent("PLAYER_STARTED_MOVING")
 	end
@@ -498,11 +527,30 @@ function addon:SCENARIO_POI_UPDATE()
 	end
 	speedy:UpdateEncounterInfo()
 end
-
+function addon:ENCOUNTER_END(encounterID, encounterName, difficultyID, raidSize, kill,...)
+	if kill == 0 then return end
+	local _time = GetTime()
+	local allDone = true
+	for i = 1, #speedyggDB.currentInstance.encounters do
+		if speedyggDB.currentInstance.encounters[i].eID == encounterID then
+			speedyggDB.currentInstance.encounters[i].completeTime = _time - speedyggDB.currentInstance.startTime
+			speedyggDB.currentInstance.encounters[i].dif = speedy:GetDiff(encounterID, speedyggDB.currentInstance.encounters[i].completeTime)
+		elseif not speedyggDB.currentInstance.encounters[i].completeTime then
+			allDone = false
+		end
+	end
+	if allDone then
+		speedy:StopTimer()
+	else
+		speedy:UpdateEncounterInfo()
+	end
+end
 function addon:PLAYER_ENTERING_WORLD()
 	if not IsInInstance() then
 		addon:UnregisterEvent("PLAYER_STARTED_MOVING")
 		addon:UnregisterEvent("SCENARIO_POI_UPDATE")
+		addon:UnregisterEvent("ENCOUNTER_END")
+		speedy.usingHardcodedData = false
 		speedyggDB.currentInstance = {
 			instanceID = instanceID,
 			alreadyStarted = false,
@@ -517,46 +565,60 @@ function addon:PLAYER_ENTERING_WORLD()
 		speedy.isReady = false
 		return
 	end
-	local instanceID = select(8, GetInstanceInfo())
+	local _,_,difficultyID,_,_,_,_,instanceID = GetInstanceInfo()
+	local hcData = speedy:GetDungeonData(instanceID, difficultyID)
 	if not speedyggDB.currentInstance.alreadyStarted and (speedyggDB.currentInstance.instanceID ~= instanceID or not speedyggDB.currentInstance.hasMoved) then
 		speedyggDB.currentInstance = {
 			instanceID = instanceID,
 			alreadyStarted = false,
 			hasMoved = false,
 			startTime = 0,
-			difficultyID = select(3, GetInstanceInfo()),
+			difficultyID = difficultyID,
 			encounters = {},
 		}
-		local instanceName, scenarioDesc, objectiveCount = C_Scenario.GetStepInfo()
-		for i = 1, objectiveCount do
-			local criteriaString, criteriaType, completed, quantity, totalQuantity, flags, assetID, quantityString, criteriaID, duration, elapsed, _, isWeightedProgress = C_Scenario.GetCriteriaInfo(i)
-			currentPhaseEncounters[criteriaID] = true
-			if completed then
-				speedyggDB.currentInstance.encounters = {}
-				return
+		if hcData then
+			speedyggDB.currentInstance.encounters = hcData
+			speedy.usingHardcodedData = true
+			addon:RegisterEvent('ENCOUNTER_END')
+		else
+			speedy.usingHardcodedData = false
+			local instanceName, scenarioDesc, objectiveCount = C_Scenario.GetStepInfo()
+			for i = 1, objectiveCount do
+				local criteriaString, criteriaType, completed, quantity, totalQuantity, flags, assetID, quantityString, criteriaID, duration, elapsed, _, isWeightedProgress = C_Scenario.GetCriteriaInfo(i)
+				currentPhaseEncounters[criteriaID] = true
+				if completed then
+					speedyggDB.currentInstance.encounters = {}
+					return
+				end
+				speedyggDB.currentInstance.encounters[criteriaID] = {
+						criteria = criteriaString and criteriaString:gsub(" defeated$", "") or "",
+						completeTime = nil,
+						bestTime = speedy:GetDiff(criteriaID, 0, true),
+						dif = false
+				}
 			end
-			speedyggDB.currentInstance.encounters[criteriaID] = {
-					criteria = criteriaString and criteriaString:gsub(" defeated$", "") or "",
-					completeTime = nil,
-					bestTime = speedy:GetDiff(criteriaID, 0, true),
-					dif = false
-			}
+			addon:RegisterEvent("SCENARIO_POI_UPDATE")
 		end
-		addon:RegisterEvent("SCENARIO_POI_UPDATE")
 		addon:RegisterEvent("PLAYER_STARTED_MOVING")
 		speedy:ShowTimer()
 	elseif speedyggDB.currentInstance.alreadyStarted and speedyggDB.currentInstance.startTime < GetTime() then -- reboot check
-		local instanceName, scenarioDesc, objectiveCount = C_Scenario.GetStepInfo()
-		local _completed = true
-		for i = 1, objectiveCount do
-			local criteriaString, criteriaType, completed, quantity, totalQuantity, flags, assetID, quantityString, criteriaID, duration, elapsed, _, isWeightedProgress = C_Scenario.GetCriteriaInfo(i)
-			currentPhaseEncounters[criteriaID] = true
-			if not completed then
-				_completed = false
+		if hcData then
+			speedy.usingHardcodedData = true
+			addon:RegisterEvent('ENCOUNTER_END')
+			speedy:ShowTimer()
+		else
+			local _completed = true
+			local instanceName, scenarioDesc, objectiveCount = C_Scenario.GetStepInfo()
+			for i = 1, objectiveCount do
+				local criteriaString, criteriaType, completed, quantity, totalQuantity, flags, assetID, quantityString, criteriaID, duration, elapsed, _, isWeightedProgress = C_Scenario.GetCriteriaInfo(i)
+				currentPhaseEncounters[criteriaID] = true
+				if not completed then
+					_completed = false
+				end
 			end
+			addon:RegisterEvent("SCENARIO_POI_UPDATE")
+			speedy:ShowTimer(_completed)
 		end
-		addon:RegisterEvent("SCENARIO_POI_UPDATE")
-		speedy:ShowTimer(_completed)
 	end
 end
 
