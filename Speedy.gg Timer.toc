@@ -2,7 +2,7 @@
 ## Title: Speedy.gg Timer
 ## Notes: Speedy.gg Timer
 ## Author: Ironi
-## Version: 1.06
+## Version: 1.061
 ## DefaultState: enabled
 
 ## SavedVariablesPerCharacter: speedyggDB

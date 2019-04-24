@@ -5,7 +5,7 @@ speedy.name = UnitName('player')
 speedy.server = GetRealmName()
 speedy.guid = UnitGUID('player')
 speedy.onUpdateFrame = CreateFrame("frame")
-speedy.version = 1.06
+speedy.version = 1.061
 local addon = CreateFrame('Frame');
 addon:SetScript("OnEvent", function(self, event, ...)
 	self[event](self, ...)
@@ -56,6 +56,18 @@ function speedy:StartTimer()
 		speedy.frames.mainTimerText:SetText(GetFormatedTime(GetTime()-speedyggDB.currentInstance.startTime))
 	end)
 	speedy.frames.watermark:Show()
+	--[[
+	local forceUpdateDungeonInfo = false
+	for k,v in pairs(speedyggDB.currentInstance.encounters) do
+		if v.completeTime then
+			v.completeTime = nil
+			forceUpdateDungeonInfo = true
+		end
+	end
+	if forceUpdateDungeonInfo then
+		speedy:UpdateEncounterInfo()
+	end
+	--]]
 	addon:UnregisterEvent("PLAYER_STARTED_MOVING")
 end
 function speedy:HideTimer()
@@ -141,7 +153,7 @@ function speedy:GetFormatedDungeonInfo(force)
 	end
 	local _,_, objectiveCount = C_Scenario.GetStepInfo()
 	if objectiveCount == 0 then
-		for criteriaID,v in spairs(speedyggDB.currentInstance.encounters, function(t,a,b) return t[b].completeTime > t[a].completeTime end) do
+		for criteriaID,v in spairs(speedyggDB.currentInstance.encounters, function(t,a,b) return (t[b].completeTime or 0) > (t[a].completeTime or 0) end) do
 			local str = (#t > 0 and "\n") or ""
 				-- Criteria
 			if not speedyggDB.currentInstance.encounters[criteriaID].completeTime then
@@ -240,8 +252,13 @@ function speedy:ShowTimer(completed)
 		speedy.frames.mainFrame:SetPoint(speedyggDB.pos.anchor, UIParent, speedyggDB.pos.x,speedyggDB.pos.y)
 
 		speedy.frames.mainTimerText = speedy.frames.mainFrame:CreateFontString()
+		-- TODO force left/right anchors
 		speedy.frames.mainTimerText:SetFont(GameFontNormal:GetFont(), speedyggDB.fontSize, "OUTLINE")
-		speedy.frames.mainTimerText:SetPoint("CENTER", speedy.frames.mainFrame, "CENTER", 0, 0)
+		if speedyggDB.pos.j == "CENTER" then
+			speedy.frames.mainTimerText:SetPoint("CENTER", speedy.frames.mainFrame, "CENTER", 0, 0)
+		else
+			speedy.frames.mainTimerText:SetPoint(speedyggDB.pos.j, speedy.frames.mainFrame, speedyggDB.pos.j, 0, 0)
+		end
 		speedy.frames.mainTimerText:SetJustifyH(speedyggDB.pos.j)
 		speedy.frames.mainTimerText:SetText("00:00.000")
 
@@ -316,7 +333,7 @@ function speedy:ShowTimer(completed)
 		toggleFrameLock()
 
 		if speedyggDB.currentInstance.alreadyStarted then
-			if not completed then
+			if not speedyggDB.currentInstance.endTime then
 				speedy.frames.startButton:Hide()
 				speedy.onUpdateFrame:SetScript("OnUpdate", function()
 					speedy.frames.mainTimerText:SetText(GetFormatedTime(GetTime()-speedyggDB.currentInstance.startTime))
@@ -467,6 +484,7 @@ function addon:PLAYER_STARTED_MOVING()
 			speedy:print("Timer disabled because you moved. Re-enter to enable again.")
 			addon:UnregisterEvent("SCENARIO_POI_UPDATE")
 			addon:UnregisterEvent("ENCOUNTER_END")
+			addon:UnregisterEvent("BOSS_KILL")
 		end
 		addon:UnregisterEvent("PLAYER_STARTED_MOVING")
 	end
@@ -492,7 +510,7 @@ function addon:SCENARIO_POI_UPDATE()
 		currentPhaseEncounters = {}
 	end
 	lastPhase = currentPhase
-	if scenarioDone then
+	if scenarioDone and speedyggDB.currentInstance.alreadyStarted then
 		for k,v in pairs(speedyggDB.currentInstance.encounters) do
 			if not v.completeTime then
 				v.completeTime = _time - speedyggDB.currentInstance.startTime
@@ -532,7 +550,24 @@ function addon:ENCOUNTER_END(encounterID, encounterName, difficultyID, raidSize,
 	local _time = GetTime()
 	local allDone = true
 	for i = 1, #speedyggDB.currentInstance.encounters do
-		if speedyggDB.currentInstance.encounters[i].eID == encounterID then
+		if speedyggDB.currentInstance.encounters[i].eID == encounterID and not speedyggDB.currentInstance.encounters[i].completeTime then
+			speedyggDB.currentInstance.encounters[i].completeTime = _time - speedyggDB.currentInstance.startTime
+			speedyggDB.currentInstance.encounters[i].dif = speedy:GetDiff(encounterID, speedyggDB.currentInstance.encounters[i].completeTime)
+		elseif not speedyggDB.currentInstance.encounters[i].completeTime then
+			allDone = false
+		end
+	end
+	if allDone then
+		speedy:StopTimer()
+	else
+		speedy:UpdateEncounterInfo()
+	end
+end
+function addon:BOSS_KILL(id)
+	local _time = GetTime()
+	local allDone = true
+	for i = 1, #speedyggDB.currentInstance.encounters do
+		if speedyggDB.currentInstance.encounters[i].eID == encounterID and speedyggDB.currentInstance.encounters[i].completeTime then
 			speedyggDB.currentInstance.encounters[i].completeTime = _time - speedyggDB.currentInstance.startTime
 			speedyggDB.currentInstance.encounters[i].dif = speedy:GetDiff(encounterID, speedyggDB.currentInstance.encounters[i].completeTime)
 		elseif not speedyggDB.currentInstance.encounters[i].completeTime then
@@ -550,6 +585,7 @@ function addon:PLAYER_ENTERING_WORLD()
 		addon:UnregisterEvent("PLAYER_STARTED_MOVING")
 		addon:UnregisterEvent("SCENARIO_POI_UPDATE")
 		addon:UnregisterEvent("ENCOUNTER_END")
+		addon:UnregisterEvent("BOSS_KILL")
 		speedy.usingHardcodedData = false
 		speedyggDB.currentInstance = {
 			instanceID = instanceID,
@@ -563,6 +599,7 @@ function addon:PLAYER_ENTERING_WORLD()
 		currentPhaseEncounters = {}
 		speedy:HideTimer()
 		speedy.isReady = false
+		lastPhase = false
 		return
 	end
 	local _,_,difficultyID,_,_,_,_,instanceID = GetInstanceInfo()
@@ -580,6 +617,7 @@ function addon:PLAYER_ENTERING_WORLD()
 			speedyggDB.currentInstance.encounters = hcData
 			speedy.usingHardcodedData = true
 			addon:RegisterEvent('ENCOUNTER_END')
+			addon:RegisterEvent('BOSS_KILL')
 		else
 			speedy.usingHardcodedData = false
 			local instanceName, scenarioDesc, objectiveCount = C_Scenario.GetStepInfo()
@@ -605,19 +643,12 @@ function addon:PLAYER_ENTERING_WORLD()
 		if hcData then
 			speedy.usingHardcodedData = true
 			addon:RegisterEvent('ENCOUNTER_END')
+			addon:RegisterEvent('BOSS_KILL')
 			speedy:ShowTimer()
 		else
-			local _completed = true
-			local instanceName, scenarioDesc, objectiveCount = C_Scenario.GetStepInfo()
-			for i = 1, objectiveCount do
-				local criteriaString, criteriaType, completed, quantity, totalQuantity, flags, assetID, quantityString, criteriaID, duration, elapsed, _, isWeightedProgress = C_Scenario.GetCriteriaInfo(i)
-				currentPhaseEncounters[criteriaID] = true
-				if not completed then
-					_completed = false
-				end
-			end
 			addon:RegisterEvent("SCENARIO_POI_UPDATE")
-			speedy:ShowTimer(_completed)
+			addon:SCENARIO_POI_UPDATE()
+			speedy:ShowTimer()
 		end
 	end
 end
