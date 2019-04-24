@@ -5,7 +5,7 @@ speedy.name = UnitName('player')
 speedy.server = GetRealmName()
 speedy.guid = UnitGUID('player')
 speedy.onUpdateFrame = CreateFrame("frame")
-speedy.version = 1.061
+speedy.version = 1.062
 local addon = CreateFrame('Frame');
 addon:SetScript("OnEvent", function(self, event, ...)
 	self[event](self, ...)
@@ -563,7 +563,7 @@ function addon:ENCOUNTER_END(encounterID, encounterName, difficultyID, raidSize,
 		speedy:UpdateEncounterInfo()
 	end
 end
-function addon:BOSS_KILL(id)
+function addon:BOSS_KILL(encounterID)
 	local _time = GetTime()
 	local allDone = true
 	for i = 1, #speedyggDB.currentInstance.encounters do
