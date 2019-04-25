@@ -419,3 +419,21 @@ local faction = UnitFactionGroup('player')
 		return #t > 0 and t or false
 	end
 end
+StaticPopupDialogs["SPEEDYGG_WARNING"] = {
+  text = "WARNING\nOne of the encounters in this instance is known to be buggy and we might not be able to track your progress.",
+  button1 = OKAY,
+  OnAccept = function()  end,
+  timeout = 0,
+  whileDead = true,
+  preferredIndex = 3,
+}
+do
+	local buggyDungeons = {
+		[671] = true, -- The Bastion of Twilight
+	}
+	function ns:IsBuggyDungeon(id)
+	if (not id) or (not buggyDungeons[id]) then return end
+		ns:print("WARNING - One of the encounters in this instance is known to be buggy and we might not be able to track your progress.")
+		StaticPopup_Show("SPEEDYGG_WARNING")
+	end
+end

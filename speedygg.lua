@@ -5,7 +5,7 @@ speedy.name = UnitName('player')
 speedy.server = GetRealmName()
 speedy.guid = UnitGUID('player')
 speedy.onUpdateFrame = CreateFrame("frame")
-speedy.version = 1.062
+speedy.version = 1.063
 local addon = CreateFrame('Frame');
 addon:SetScript("OnEvent", function(self, event, ...)
 	self[event](self, ...)
@@ -603,6 +603,7 @@ function addon:PLAYER_ENTERING_WORLD()
 		return
 	end
 	local _,_,difficultyID,_,_,_,_,instanceID = GetInstanceInfo()
+	speedy:IsBuggyDungeon(instanceID)
 	local hcData = speedy:GetDungeonData(instanceID, difficultyID)
 	if not speedyggDB.currentInstance.alreadyStarted and (speedyggDB.currentInstance.instanceID ~= instanceID or not speedyggDB.currentInstance.hasMoved) then
 		speedyggDB.currentInstance = {
