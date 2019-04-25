@@ -198,8 +198,8 @@ local dungeons = {
 		{ejID = 156, eID = 1030}, -- Halfus Wyrmbreaker
 		{ejID = 157, eID = 1032}, -- Theralion and Valiona
 		{ejID = 158, eID = 1028}, -- Ascendant Council
-		{ejID = 167, eID = 1029}, -- Cho'gall
-		{ejID = 168, eID = 1083, specificDif = {[5] = true, [6] = true}}, -- Sinestra TODO re check eid
+		{ejID = 167, eID = 1029, npcID = 43324}, -- Cho'gall
+		{ejID = 168, eID = 1083, specificDif = {[5] = true, [6] = true}, npcID = 45213}, -- Sinestra
 	},
 	[754] = { -- Throne of the Four Winds - 74
 		{ejID = 154, eID = 1035}, -- The Conclave of Wind
@@ -413,6 +413,7 @@ local faction = UnitFactionGroup('player')
 					dif = false,
 					completeTime = nil,
 					bestTime = ns:GetDiff(v.eID, 0, true, difficultyID, instanceID),
+					npcID = v.npcID or nil
 				})
 			end
 		end
@@ -428,11 +429,9 @@ StaticPopupDialogs["SPEEDYGG_WARNING"] = {
   preferredIndex = 3,
 }
 do
-	local buggyDungeons = {
-		[671] = true, -- The Bastion of Twilight
-	}
-	function ns:IsBuggyDungeon(id)
-	if (not id) or (not buggyDungeons[id]) then return end
+	local buggyDungeons = {}
+	function ns:IsBuggyDungeon(id, dID)
+	if (not id) or (not dID) or (not buggyDungeons[id]) or (not buggyDungeons[id][dID]) then return end
 		ns:print("WARNING - One of the encounters in this instance is known to be buggy and we might not be able to track your progress.")
 		StaticPopup_Show("SPEEDYGG_WARNING")
 	end

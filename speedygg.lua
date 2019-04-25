@@ -5,7 +5,7 @@ speedy.name = UnitName('player')
 speedy.server = GetRealmName()
 speedy.guid = UnitGUID('player')
 speedy.onUpdateFrame = CreateFrame("frame")
-speedy.version = 1.063
+speedy.version = 1.064
 local addon = CreateFrame('Frame');
 addon:SetScript("OnEvent", function(self, event, ...)
 	self[event](self, ...)
@@ -355,7 +355,6 @@ function speedy:ShowTimer(completed)
 		speedy.frames.mainFrame:Show()
 		speedy:UpdateEncounterInfo()
 	end
-
 end
 function speedy:StopTimer()
 	if speedy.frames and speedy.frames.mainTimerText then
@@ -484,6 +483,8 @@ function addon:PLAYER_STARTED_MOVING()
 			speedy:print("Timer disabled because you moved. Re-enter to enable again.")
 			addon:UnregisterEvent("SCENARIO_POI_UPDATE")
 			addon:UnregisterEvent("ENCOUNTER_END")
+			addon:UnregisterEvent("ENCOUNTER_START")
+			addon:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 			addon:UnregisterEvent("BOSS_KILL")
 		end
 		addon:UnregisterEvent("PLAYER_STARTED_MOVING")
@@ -545,17 +546,44 @@ function addon:SCENARIO_POI_UPDATE()
 	end
 	speedy:UpdateEncounterInfo()
 end
-function addon:ENCOUNTER_END(encounterID, encounterName, difficultyID, raidSize, kill,...)
-	if kill == 0 then return end
+local function CheckEncounterData(id, npcID)
 	local _time = GetTime()
 	local allDone = true
-	for i = 1, #speedyggDB.currentInstance.encounters do
-		if speedyggDB.currentInstance.encounters[i].eID == encounterID and not speedyggDB.currentInstance.encounters[i].completeTime then
-			speedyggDB.currentInstance.encounters[i].completeTime = _time - speedyggDB.currentInstance.startTime
-			speedyggDB.currentInstance.encounters[i].dif = speedy:GetDiff(encounterID, speedyggDB.currentInstance.encounters[i].completeTime)
-		elseif not speedyggDB.currentInstance.encounters[i].completeTime then
-			allDone = false
+	local update = false
+	if id then
+		for i = 1, #speedyggDB.currentInstance.encounters do
+			if speedyggDB.currentInstance.encounters[i].eID == id and not speedyggDB.currentInstance.encounters[i].completeTime then
+				speedyggDB.currentInstance.encounters[i].completeTime = _time - speedyggDB.currentInstance.startTime
+				speedyggDB.currentInstance.encounters[i].dif = speedy:GetDiff(id, speedyggDB.currentInstance.encounters[i].completeTime)
+				update = true
+			elseif not speedyggDB.currentInstance.encounters[i].completeTime then
+				allDone = false
+			end
 		end
+	elseif npcID then
+		for i = 1, #speedyggDB.currentInstance.encounters do
+			if speedyggDB.currentInstance.encounters[i].npcID and speedyggDB.currentInstance.encounters[i].npcID == npcID then
+				speedy.isTrackingCLEU = false
+				update = true
+				speedyggDB.currentInstance.encounters[i].completeTime = _time - speedyggDB.currentInstance.startTime
+				speedyggDB.currentInstance.encounters[i].dif = speedy:GetDiff(speedyggDB.currentInstance.encounters[i].eID, speedyggDB.currentInstance.encounters[i].completeTime)
+			elseif not speedyggDB.currentInstance.encounters[i].completeTime then
+				allDone = false
+			end
+		end
+		if not update then return end
+		if allDone then
+			addon:UnregisterEvent('ENCOUNTER_START')
+			speedy:StopTimer()
+		else
+			speedy:UpdateEncounterInfo()
+		end
+	else
+		return
+	end
+	if speedy.isTrackingCLEU then
+		speedy.isTrackingCLEU = false
+		addon:UnregisterEvent('COMBAT_LOG_EVENT_UNFILTERED')
 	end
 	if allDone then
 		speedy:StopTimer()
@@ -563,22 +591,12 @@ function addon:ENCOUNTER_END(encounterID, encounterName, difficultyID, raidSize,
 		speedy:UpdateEncounterInfo()
 	end
 end
+function addon:ENCOUNTER_END(encounterID, encounterName, difficultyID, raidSize, kill,...)
+	if kill == 0 then return end
+	CheckEncounterData(encounterID)
+end
 function addon:BOSS_KILL(encounterID)
-	local _time = GetTime()
-	local allDone = true
-	for i = 1, #speedyggDB.currentInstance.encounters do
-		if speedyggDB.currentInstance.encounters[i].eID == encounterID and speedyggDB.currentInstance.encounters[i].completeTime then
-			speedyggDB.currentInstance.encounters[i].completeTime = _time - speedyggDB.currentInstance.startTime
-			speedyggDB.currentInstance.encounters[i].dif = speedy:GetDiff(encounterID, speedyggDB.currentInstance.encounters[i].completeTime)
-		elseif not speedyggDB.currentInstance.encounters[i].completeTime then
-			allDone = false
-		end
-	end
-	if allDone then
-		speedy:StopTimer()
-	else
-		speedy:UpdateEncounterInfo()
-	end
+	CheckEncounterData(encounterID)
 end
 function addon:PLAYER_ENTERING_WORLD()
 	if not IsInInstance() then
@@ -603,7 +621,7 @@ function addon:PLAYER_ENTERING_WORLD()
 		return
 	end
 	local _,_,difficultyID,_,_,_,_,instanceID = GetInstanceInfo()
-	speedy:IsBuggyDungeon(instanceID)
+	speedy:IsBuggyDungeon(instanceID, difficultyID)
 	local hcData = speedy:GetDungeonData(instanceID, difficultyID)
 	if not speedyggDB.currentInstance.alreadyStarted and (speedyggDB.currentInstance.instanceID ~= instanceID or not speedyggDB.currentInstance.hasMoved) then
 		speedyggDB.currentInstance = {
@@ -615,6 +633,11 @@ function addon:PLAYER_ENTERING_WORLD()
 			encounters = {},
 		}
 		if hcData then
+			for k,v in pairs(hcData) do
+				if v.npcID then
+					addon:RegisterEvent('ENCOUNTER_START')
+				end
+			end
 			speedyggDB.currentInstance.encounters = hcData
 			speedy.usingHardcodedData = true
 			addon:RegisterEvent('ENCOUNTER_END')
@@ -643,6 +666,11 @@ function addon:PLAYER_ENTERING_WORLD()
 	elseif speedyggDB.currentInstance.alreadyStarted and speedyggDB.currentInstance.startTime < GetTime() then -- reboot check
 		if hcData then
 			speedy.usingHardcodedData = true
+			for k,v in pairs(hcData) do
+				if v.npcID then
+					addon:RegisterEvent('ENCOUNTER_START')
+				end
+			end
 			addon:RegisterEvent('ENCOUNTER_END')
 			addon:RegisterEvent('BOSS_KILL')
 			speedy:ShowTimer()
@@ -653,7 +681,22 @@ function addon:PLAYER_ENTERING_WORLD()
 		end
 	end
 end
-
+function addon:ENCOUNTER_START(encounterID)
+	for i = 1, #speedyggDB.currentInstance.encounters do
+		if speedyggDB.currentInstance.encounters[i].eID == encounterID and speedyggDB.currentInstance.encounters[i].npcID then
+			speedy.isTrackingCLEU = true
+			addon:RegisterEvent('COMBAT_LOG_EVENT_UNFILTERED')
+		end
+	end
+end
+function addon:COMBAT_LOG_EVENT_UNFILTERED()
+	local args = {CombatLogGetCurrentEventInfo()}
+	if args[2] == 'UNIT_DIED' then
+		local unitType, _, serverID, instanceID, zoneID, npcID, spawnID = strsplit("-", args[8]) -- destGUID
+		npcID = tonumber(npcID)
+		CheckEncounterData(nil, npcID)
+	end
+end
 SLASH_SPEEDYGG1 = "/speedy"
 SLASH_SPEEDYGG2 = "/sgg"
 SlashCmdList["SPEEDYGG"] = function(msg)
